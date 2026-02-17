@@ -1,4 +1,4 @@
-import os 
+import os
 import asyncio
 import logging
 from datetime import datetime
@@ -12,10 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ── Configuración ──────────────────────────────────────────────
-TWITTER_BEARER_TOKEN = os.environ["TWITTER_BEARER_TOKEN"]
-ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
-TELEGRAM_TOKEN       = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID     = os.environ["TELEGRAM_CHAT_ID"]
+TWITTER_BEARER_TOKEN = os.environ.get("TWITTER_BEARER_TOKEN", "")
+ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
+TELEGRAM_TOKEN       = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID     = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+logger.info(f"Variables cargadas: TWITTER={'OK' if TWITTER_BEARER_TOKEN else 'FALTA'}, ANTHROPIC={'OK' if ANTHROPIC_API_KEY else 'FALTA'}, TELEGRAM={'OK' if TELEGRAM_TOKEN else 'FALTA'}, CHAT_ID={'OK' if TELEGRAM_CHAT_ID else 'FALTA'}")
 
 LIST_IDS = [
     "2023175604594467083",
@@ -26,7 +28,6 @@ LIST_IDS = [
 
 TIMEZONE = "America/Argentina/Buenos_Aires"
 
-# ── Leer tweets de una lista ───────────────────────────────────
 async def get_list_tweets(client: httpx.AsyncClient, list_id: str, max_results: int = 20) -> list:
     url = f"https://api.twitter.com/2/lists/{list_id}/tweets"
     params = {
@@ -55,7 +56,6 @@ async def get_list_tweets(client: httpx.AsyncClient, list_id: str, max_results: 
         logger.error(f"Error leyendo lista {list_id}: {e}")
         return []
 
-# ── Generar resumen con Claude ─────────────────────────────────
 def generate_summary(all_tweets: list, period: str) -> str:
     if not all_tweets:
         return "No se encontraron tweets en las listas."
@@ -84,7 +84,6 @@ Resumen:"""
     )
     return message.content[0].text
 
-# ── Tarea principal ────────────────────────────────────────────
 async def send_summary(period: str):
     logger.info(f"Iniciando resumen de {period}...")
 
@@ -101,7 +100,6 @@ async def send_summary(period: str):
     summary = generate_summary(all_tweets, period)
 
     now = datetime.now(pytz.timezone(TIMEZONE))
-    emoji = "sunrise" if period == "morning" else "city_sunset"
     header = f"{'🌅' if period == 'morning' else '🌆'} *Resumen {'Mañana' if period == 'morning' else 'Tarde/Noche'}* — {now.strftime('%d/%m/%Y %H:%M')}\n\n"
 
     full_message = header + summary
@@ -117,16 +115,14 @@ async def send_summary(period: str):
 
     logger.info("Resumen enviado correctamente.")
 
-# ── Scheduler ─────────────────────────────────────────────────
 async def main():
+    logger.info("Arrancando bot...")
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
 
-    # 6 AM todos los dias
     scheduler.add_job(
         lambda: asyncio.create_task(send_summary("morning")),
         "cron", hour=6, minute=0
     )
-    # 6 PM todos los dias
     scheduler.add_job(
         lambda: asyncio.create_task(send_summary("evening")),
         "cron", hour=18, minute=0
