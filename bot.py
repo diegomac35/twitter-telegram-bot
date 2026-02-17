@@ -39,6 +39,8 @@ async def get_list_tweets(client: httpx.AsyncClient, list_id: str, max_results: 
     headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
     try:
         r = await client.get(url, params=params, headers=headers, timeout=15)
+        logger.info(f"Twitter status para lista {list_id}: {r.status_code}")
+        logger.info(f"Twitter respuesta raw: {r.text[:500]}")
         r.raise_for_status()
         data = r.json()
         tweets = data.get("data", [])
@@ -51,6 +53,7 @@ async def get_list_tweets(client: httpx.AsyncClient, list_id: str, max_results: 
                 "username": user.get("username", "?"),
                 "name":     user.get("name", "?"),
             })
+        logger.info(f"Lista {list_id}: {len(result)} tweets encontrados")
         return result
     except Exception as e:
         logger.error(f"Error leyendo lista {list_id}: {e}")
