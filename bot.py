@@ -4,14 +4,14 @@ import logging
 from datetime import datetime
 import httpx
 import anthropic
-from telegram import Bot
+from telegram import Bot, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Configuración ──────────────────────────────────────────────
 TWITTER_BEARER_TOKEN = os.environ.get("TWITTER_BEARER_TOKEN", "")
 ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 TELEGRAM_TOKEN       = os.environ.get("TELEGRAM_TOKEN", "")
@@ -84,7 +84,8 @@ Resumen:"""
     )
     return message.content[0].text
 
-async def send_summary(period: str):
+async def send_summary(period: str, chat_id: str = None):
+    target = chat_id or TELEGRAM_CHAT_ID
     logger.info(f"Iniciando resumen de {period}...")
 
     async with httpx.AsyncClient() as client:
@@ -108,31 +109,45 @@ async def send_summary(period: str):
     if len(full_message) > 4096:
         chunks = [full_message[i:i+4096] for i in range(0, len(full_message), 4096)]
         for chunk in chunks:
-            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=chunk, parse_mode="Markdown")
+            await bot.send_message(chat_id=target, text=chunk, parse_mode="Markdown")
             await asyncio.sleep(1)
     else:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=full_message, parse_mode="Markdown")
+        await bot.send_message(chat_id=target, text=full_message, parse_mode="Markdown")
 
     logger.info("Resumen enviado correctamente.")
 
+# ── Comando /resumen ───────────────────────────────────────────
+async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Generando resumen, esperá un momento...")
+    try:
+        await send_summary("manual", chat_id=str(update.effective_chat.id))
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Hola! Soy tu bot de resumen de Twitter.\n\n"
+        "Comandos disponibles:\n"
+        "/resumen — Genera un resumen ahora mismo\n\n"
+        "También te mando resúmenes automáticos a las 6 AM y 6 PM."
+    )
+
 async def main():
     logger.info("Arrancando bot...")
+
+    # Scheduler para los resumenes automaticos
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-
-    scheduler.add_job(
-        lambda: asyncio.create_task(send_summary("morning")),
-        "cron", hour=6, minute=0
-    )
-    scheduler.add_job(
-        lambda: asyncio.create_task(send_summary("evening")),
-        "cron", hour=18, minute=0
-    )
-
+    scheduler.add_job(lambda: asyncio.create_task(send_summary("morning")), "cron", hour=6, minute=0)
+    scheduler.add_job(lambda: asyncio.create_task(send_summary("evening")), "cron", hour=18, minute=0)
     scheduler.start()
-    logger.info("Bot iniciado. Esperando 6 AM y 6 PM (Argentina)...")
 
-    while True:
-        await asyncio.sleep(60)
+    # Telegram bot con comandos
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("resumen", cmd_resumen))
+
+    logger.info("Bot iniciado. Esperando 6 AM y 6 PM (Argentina)...")
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
