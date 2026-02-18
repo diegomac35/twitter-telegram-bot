@@ -1,5 +1,0 @@
-anthropic
-python-telegram-bot==21.9
-httpx
-apscheduler
-pytz
