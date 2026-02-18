@@ -4,6 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "postinstall": "apt-get update && apt-get install -y python3 make g++",
     "start": "node index.js"
   },
   "dependencies": {
@@ -15,4 +16,3 @@
     "node": ">=18"
   }
 }
-
