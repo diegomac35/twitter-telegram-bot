@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import TelegramBot from "node-telegram-bot-api";
+import cron from "node-cron";
 
 // Variables de entorno
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -38,18 +39,36 @@ async function sendSummary(hours = 12) {
   await bot.sendMessage(TELEGRAM_CHAT_ID, `Resumen últimas ${hours} horas:\n\n${summary}`);
 }
 
-// Comando on-demand en Telegram: /resumen 8h
+// ----------------------
+// Cron interno para resúmenes automáticos
+// ----------------------
+
+// Resumen diario a las 6 AM
+cron.schedule("0 6 * * *", () => {
+  sendSummary(12);
+});
+
+// Resumen diario a las 6 PM
+cron.schedule("0 18 * * *", () => {
+  sendSummary(12);
+});
+
+// ----------------------
+// Comandos on-demand en Telegram
+// ----------------------
+
+// /resumen 8h
 bot.onText(/\/resumen (\d+)h/, async (msg, match) => {
   const hours = parseInt(match[1]);
   await sendSummary(hours);
   bot.sendMessage(msg.chat.id, `✅ Resumen de ${hours}h enviado.`);
 });
 
-// Test manual
+// /test
 bot.onText(/\/test/, async (msg) => {
   await sendSummary(1);
   bot.sendMessage(msg.chat.id, "✅ Test completado.");
 });
 
-// Export para scheduler
+// Export para posibles usos externos
 export default sendSummary;
