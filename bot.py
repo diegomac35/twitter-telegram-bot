@@ -29,7 +29,7 @@ LIST_IDS = [
 TIMEZONE = "America/Argentina/Buenos_Aires"
 
 async def get_list_tweets(list_id: str) -> list:
-    url = "https://twitterapi.io/twitter/list/tweets"
+    url = "https://api.twitterapi.io/twitter/list/tweets"
     headers = {
         "X-API-Key": TWITTERAPI_KEY,
         "Content-Type": "application/json",
