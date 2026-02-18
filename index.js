@@ -8,7 +8,7 @@ import cron from "node-cron";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const TWITTERAPI_KEY = process.env.TWITTERAPI_KEY;
-const LIST_IDS = process.env.LIST_USERNAMES.split(","); // IDs de listas públicas, separadas por coma
+const LIST_IDS = process.env.LIST_USERNAMES ? process.env.LIST_USERNAMES.split(",") : [];
 
 if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !TWITTERAPI_KEY || LIST_IDS.length === 0) {
   console.error("❌ Faltan variables de entorno necesarias. Revisa TWITTERAPI_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID y LIST_USERNAMES");
@@ -18,7 +18,14 @@ if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !TWITTERAPI_KEY || LIST_IDS.leng
 // ----------------------
 // Inicia bot de Telegram
 // ----------------------
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+let bot;
+try {
+  bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+  console.log("✅ Bot de Telegram iniciado correctamente.");
+} catch (error) {
+  console.error("❌ Error iniciando bot de Telegram:", error);
+  process.exit(1);
+}
 
 // ----------------------
 // Función para traer tweets de una lista
@@ -33,7 +40,7 @@ async function getTweetsFromList(listId, sinceHours = 12) {
     const data = await res.json();
     return data.tweets || [];
   } catch (error) {
-    console.error(`Error al traer tweets de lista ${listId}:`, error);
+    console.error(`❌ Error al traer tweets de lista ${listId}:`, error);
     return [];
   }
 }
@@ -58,8 +65,9 @@ async function sendSummary(hours = 12) {
   const summary = summarizeTweets(allTweets);
   try {
     await bot.sendMessage(TELEGRAM_CHAT_ID, `Resumen últimas ${hours} horas:\n\n${summary}`);
+    console.log(`✅ Resumen de ${hours}h enviado a Telegram.`);
   } catch (error) {
-    console.error("Error enviando resumen a Telegram:", error);
+    console.error("❌ Error enviando resumen a Telegram:", error);
   }
 }
 
