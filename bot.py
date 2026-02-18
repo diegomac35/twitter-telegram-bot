@@ -12,13 +12,12 @@ import pytz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
-TELEGRAM_TOKEN       = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID     = os.environ.get("TELEGRAM_CHAT_ID", "")
-TWITTER_AUTH_TOKEN   = os.environ.get("TWITTER_AUTH_TOKEN", "")
-TWITTER_CT0          = os.environ.get("TWITTER_CT0", "")
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+TELEGRAM_TOKEN     = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
+TWITTERAPI_KEY     = os.environ.get("TWITTERAPI_KEY", "")
 
-logger.info(f"Variables cargadas: ANTHROPIC={'OK' if ANTHROPIC_API_KEY else 'FALTA'}, TELEGRAM={'OK' if TELEGRAM_TOKEN else 'FALTA'}, AUTH_TOKEN={'OK' if TWITTER_AUTH_TOKEN else 'FALTA'}, CT0={'OK' if TWITTER_CT0 else 'FALTA'}")
+logger.info(f"Variables: ANTHROPIC={'OK' if ANTHROPIC_API_KEY else 'FALTA'}, TELEGRAM={'OK' if TELEGRAM_TOKEN else 'FALTA'}, TWITTERAPI={'OK' if TWITTERAPI_KEY else 'FALTA'}")
 
 LIST_IDS = [
     "2023175604594467083",
@@ -29,40 +28,29 @@ LIST_IDS = [
 
 TIMEZONE = "America/Argentina/Buenos_Aires"
 
-async def get_list_tweets(list_id: str, max_results: int = 20) -> list:
-    url = f"https://api.twitter.com/2/lists/{list_id}/tweets"
-    params = {
-        "max_results": max_results,
-        "tweet.fields": "created_at,author_id,text",
-        "expansions": "author_id",
-        "user.fields": "username,name",
-    }
+async def get_list_tweets(list_id: str) -> list:
+    url = "https://twitterapi.io/twitter/list/tweets"
     headers = {
-        "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
-        "cookie": f"auth_token={TWITTER_AUTH_TOKEN}; ct0={TWITTER_CT0}",
-        "x-csrf-token": TWITTER_CT0,
-        "x-twitter-active-user": "yes",
-        "x-twitter-auth-type": "OAuth2Session",
-        "x-twitter-client-language": "en",
+        "X-API-Key": TWITTERAPI_KEY,
+        "Content-Type": "application/json",
     }
+    params = {"listId": list_id}
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            r = await client.get(url, params=params, headers=headers)
-            logger.info(f"Twitter status para lista {list_id}: {r.status_code}")
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, headers=headers, params=params)
+            logger.info(f"twitterapi.io status para lista {list_id}: {r.status_code}")
             if r.status_code != 200:
-                logger.error(f"Twitter error: {r.text[:300]}")
+                logger.error(f"Error: {r.text[:300]}")
                 return []
             data = r.json()
-            tweets = data.get("data", [])
-            users  = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
+            tweets = data.get("tweets", [])
             result = []
             for t in tweets:
-                user = users.get(t.get("author_id", ""), {})
                 result.append({
-                    "text":     t["text"],
-                    "username": user.get("username", "?"),
+                    "text":     t.get("text", ""),
+                    "username": t.get("author", {}).get("userName", "?"),
                 })
-            logger.info(f"Lista {list_id}: {len(result)} tweets encontrados")
+            logger.info(f"Lista {list_id}: {len(result)} tweets")
             return result
     except Exception as e:
         logger.error(f"Error leyendo lista {list_id}: {e}")
