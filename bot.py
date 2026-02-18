@@ -1,10 +1,12 @@
+
+Copiar
+
 import os
 import asyncio
 import logging
 from datetime import datetime
 import httpx
 import anthropic
-import feedparser
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -13,11 +15,13 @@ import pytz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID  = os.environ.get("TELEGRAM_CHAT_ID", "")
+ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
+TELEGRAM_TOKEN       = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID     = os.environ.get("TELEGRAM_CHAT_ID", "")
+TWITTER_AUTH_TOKEN   = os.environ.get("TWITTER_AUTH_TOKEN", "")
+TWITTER_CT0          = os.environ.get("TWITTER_CT0", "")
 
-logger.info(f"Variables cargadas: ANTHROPIC={'OK' if ANTHROPIC_API_KEY else 'FALTA'}, TELEGRAM={'OK' if TELEGRAM_TOKEN else 'FALTA'}, CHAT_ID={'OK' if TELEGRAM_CHAT_ID else 'FALTA'}")
+logger.info(f"Variables cargadas: ANTHROPIC={'OK' if ANTHROPIC_API_KEY else 'FALTA'}, TELEGRAM={'OK' if TELEGRAM_TOKEN else 'FALTA'}, AUTH_TOKEN={'OK' if TWITTER_AUTH_TOKEN else 'FALTA'}, CT0={'OK' if TWITTER_CT0 else 'FALTA'}")
 
 LIST_IDS = [
     "2023175604594467083",
@@ -26,45 +30,53 @@ LIST_IDS = [
     "2023176436958314922",
 ]
 
-# Servidores Nitter públicos (si uno falla prueba el siguiente)
-NITTER_INSTANCES = [
-    "https://nitter.net",
-    "https://nitter.privacydev.net",
-    "https://nitter.poast.org",
-]
-
 TIMEZONE = "America/Argentina/Buenos_Aires"
 
-async def get_list_feed(list_id: str, max_items: int = 20) -> list:
-    for instance in NITTER_INSTANCES:
-        url = f"{instance}/i/lists/{list_id}/rss"
-        try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                r = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                if r.status_code == 200:
-                    feed = feedparser.parse(r.text)
-                    entries = feed.entries[:max_items]
-                    result = []
-                    for entry in entries:
-                        result.append({
-                            "text":     entry.get("summary", entry.get("title", "")),
-                            "username": entry.get("author", "?"),
-                        })
-                    logger.info(f"Lista {list_id}: {len(result)} tweets via {instance}")
-                    return result
-                else:
-                    logger.warning(f"{instance} devolvió {r.status_code} para lista {list_id}")
-        except Exception as e:
-            logger.warning(f"Error con {instance} para lista {list_id}: {e}")
-    logger.error(f"Todos los servidores Nitter fallaron para lista {list_id}")
-    return []
+async def get_list_tweets(list_id: str, max_results: int = 20) -> list:
+    url = f"https://api.twitter.com/2/lists/{list_id}/tweets"
+    params = {
+        "max_results": max_results,
+        "tweet.fields": "created_at,author_id,text",
+        "expansions": "author_id",
+        "user.fields": "username,name",
+    }
+    headers = {
+        "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+        "cookie": f"auth_token={TWITTER_AUTH_TOKEN}; ct0={TWITTER_CT0}",
+        "x-csrf-token": TWITTER_CT0,
+        "x-twitter-active-user": "yes",
+        "x-twitter-auth-type": "OAuth2Session",
+        "x-twitter-client-language": "en",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(url, params=params, headers=headers)
+            logger.info(f"Twitter status para lista {list_id}: {r.status_code}")
+            if r.status_code != 200:
+                logger.error(f"Twitter error: {r.text[:300]}")
+                return []
+            data = r.json()
+            tweets = data.get("data", [])
+            users  = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
+            result = []
+            for t in tweets:
+                user = users.get(t.get("author_id", ""), {})
+                result.append({
+                    "text":     t["text"],
+                    "username": user.get("username", "?"),
+                })
+            logger.info(f"Lista {list_id}: {len(result)} tweets encontrados")
+            return result
+    except Exception as e:
+        logger.error(f"Error leyendo lista {list_id}: {e}")
+        return []
 
 def generate_summary(all_tweets: list) -> str:
     if not all_tweets:
         return "No se encontraron tweets en las listas."
     tweets_text = ""
     for i, t in enumerate(all_tweets, 1):
-        tweets_text += f"{i}. {t['username']}: {t['text']}\n\n"
+        tweets_text += f"{i}. @{t['username']}: {t['text']}\n\n"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
         model="claude-opus-4-6",
@@ -83,13 +95,12 @@ Resumen:"""
     return message.content[0].text
 
 async def fetch_and_summarize() -> str:
-    results = await asyncio.gather(*[get_list_feed(lid) for lid in LIST_IDS])
+    results = await asyncio.gather(*[get_list_tweets(lid) for lid in LIST_IDS])
     all_tweets = [t for sublist in results for t in sublist]
     logger.info(f"Total tweets: {len(all_tweets)}")
     return generate_summary(all_tweets)
 
 async def send_scheduled_summary(period: str):
-    logger.info(f"Enviando resumen programado: {period}")
     try:
         summary = await fetch_and_summarize()
         now = datetime.now(pytz.timezone(TIMEZONE))
@@ -103,7 +114,6 @@ async def send_scheduled_summary(period: str):
                     await asyncio.sleep(1)
             else:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=full_message, parse_mode="Markdown")
-        logger.info("Resumen enviado.")
     except Exception as e:
         logger.error(f"Error enviando resumen: {e}")
 
