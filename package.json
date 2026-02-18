@@ -1,16 +1,16 @@
 {
-  "name": "telegram-twitter-bot",
+  "name": "x-lists-telegram-bot",
   "version": "1.0.0",
-  "main": "index.js",
   "type": "module",
+  "main": "index.js",
   "scripts": {
-    "postinstall": "apt-get update && apt-get install -y python3 make g++",
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx playwright install --with-deps"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2",
+    "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.61.0",
-    "node-cron": "^3.0.2"
+    "playwright": "^1.42.1"
   },
   "engines": {
     "node": ">=18"
